@@ -2350,8 +2350,9 @@ class Template(Structure):
             return
 
         fullname = self.get_custom_structure_filepath(struct_name)
-        defined_struct = imp.load_source("template", fullname)
-        template = defined_struct.Template()
+        defined_struct = imp.load_source("gef_template_%s" % struct_name, fullname)
+        template = getattr(defined_struct, struct_name)()
+        #template = defined_struct.Template()
         _offset = 0
         for (_name, _type) in template._fields_:
             _size = ctypes.sizeof(_type)
@@ -2364,14 +2365,19 @@ class Template(Structure):
         ctypes.memmove(ctypes.addressof(struct), data, length)
         return
 
-    def apply_structure_to_address(self, struct_name, addr):
+    def apply_structure_to_address(self, struct_name, addr, depth=0):
+        max_depth = 3
+        if depth > max_depth:
+            return
+
         if not self.is_valid_custom_structure(struct_name):
             err("Invalid structure name '%s'" % struct_name)
             return
 
         fullname = self.get_custom_structure_filepath(struct_name)
-        defined_struct = imp.load_source("template", fullname)
-        template = defined_struct.Template()
+        defined_struct = imp.load_source("gef_template_%s" % struct_name, fullname)
+        template = getattr(defined_struct, struct_name)()
+        #template = defined_struct.Template()
 
         try:
             data = read_memory(addr, self.get_custom_structure_size(template))
@@ -2394,12 +2400,21 @@ class Template(Structure):
                 # try to parse pointers
                 _value = right_arrow.join(DereferenceCommand.dereference_from(_value))
 
-            line = ("%#x+0x%04x %s : " % (addr, _offset, _name)).ljust(40)
-            line+= "%s (%s)" % (_value, _type.__name__)
+            #addr_part = ("%#x+0x%04x %s : " % (addr, _offset, _name)).ljust(30)
+            addr_part = ("%#x+0x%04x" % (addr, _offset)).ljust(20+depth*5)
+            addr_part += "%s : " % _name
+            addr_part = addr_part.ljust(40)
+            value_part = "%s (%s)" % (_value, _type.__name__)
             parsed_value = self.get_ctypes_value(template, _name, _value)
             if len(parsed_value):
-                line+= " %s %s" % (right_arrow, parsed_value)
-            print(line)
+                parsed_part = " %s %s" % (right_arrow, parsed_value)
+            else:
+                parsed_part = ""
+            print("%s %s %s" % (addr_part, value_part, parsed_part))
+            if issubclass(_type, ctypes.Structure):
+                print("{".rjust(5*depth))
+                self.apply_structure_to_address(_type.__name__, addr + _offset, depth+1)
+                print("}".rjust(5*depth))
             _offset += _size
         return
 
